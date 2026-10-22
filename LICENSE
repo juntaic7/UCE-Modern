@@ -1,6 +1,13 @@
 MIT License
 
 Copyright (c) 2026 Juntai Cao
+Copyright (c) 2023 Yanay Rosen, Yusuf Roohani, Jure Leskovec
+
+This project is a reimplementation of, and contains portions derived from,
+Universal Cell Embeddings (UCE) by Yanay Rosen, Yusuf Roohani, and
+Jure Leskovec (https://github.com/snap-stanford/UCE), which is distributed
+under the MIT License. The original UCE copyright notice above and the
+permission notice below apply to those portions.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
