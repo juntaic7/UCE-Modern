@@ -1,5 +1,6 @@
 """Convert original UCE checkpoints to transformers format."""
 import re
+import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -7,6 +8,11 @@ import torch
 
 from .configuration_uce import UCEConfig
 from .modeling_uce import UCEModel
+from . import processing_uce
+from .processing_uce import CHECKPOINT_FILES, GENE_VOCAB_FILE, build_gene_vocab, download_model_file
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+MODEL_CARDS_DIR = _REPO_ROOT / "model_cards"
 
 _LAYER_KEY = re.compile(r"^transformer_encoder\.layers\.(\d+)\.")
 
@@ -45,4 +51,34 @@ def convert_original_checkpoint(
         model.save_pretrained(out_dir)
     if push_to_hub:
         model.push_to_hub(push_to_hub)
+    return model
+
+
+def build_hub_repo(
+    name: str,
+    out_dir: str | Path,
+    model_files_dir: str | Path = "model_files",
+    repo_id: Optional[str] = None,
+    download: bool = True,
+) -> UCEModel:
+    """Assemble a self-contained Hub repo folder for ``name`` (a CHECKPOINT_FILES key).
+
+    Writes the converted weights, config and modeling code, the processor's
+    ``gene_vocab.csv`` and ``processing_uce.py``, plus ``model_cards/<name>.md``
+    as README.md (with ``{repo_id}`` and ``{owner}`` filled in) and the LICENSE.
+    """
+    if name not in CHECKPOINT_FILES:
+        raise ValueError(f"Unknown model {name!r}; choose from {sorted(CHECKPOINT_FILES)}")
+    out = Path(out_dir)
+    root = Path(model_files_dir)
+    ckpt = download_model_file(CHECKPOINT_FILES[name], root) if download else root / CHECKPOINT_FILES[name]
+    model = convert_original_checkpoint(ckpt, out)
+
+    build_gene_vocab(root, download=download).to_csv(out / GENE_VOCAB_FILE, index=False)
+    shutil.copy(processing_uce.__file__, out / "processing_uce.py")
+    shutil.copy(_REPO_ROOT / "LICENSE", out / "LICENSE")
+    repo_id = repo_id or f"<hf-user>/{name}"
+    card = (MODEL_CARDS_DIR / f"{name}.md").read_text()
+    card = card.replace("{repo_id}", repo_id).replace("{owner}", repo_id.split("/")[0])
+    (out / "README.md").write_text(card)  # written last: marks a complete build
     return model

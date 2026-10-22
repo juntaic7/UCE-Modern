@@ -120,7 +120,7 @@ class UCEModel(UCEPreTrainedModel):
         attention_mask: [batch, seq_len], 1 for real tokens and 0 for padding.
         inputs_embeds: optional [batch, seq_len, token_dim] instead of input_ids.
         """
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = return_dict if return_dict is not None else self.config.return_dict
         if (input_ids is None) == (inputs_embeds is None):
             raise ValueError("Pass exactly one of input_ids or inputs_embeds.")
         if inputs_embeds is None:

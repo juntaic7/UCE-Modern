@@ -21,9 +21,10 @@ with `AutoModel.from_pretrained(...)` and shared on the Hugging Face Hub.
 
 🚧 Work in progress.
 
-- [x] `transformers`-compatible model (`UCEConfig`, `UCEModel`) for both the
-      4-layer and 33-layer UCE architectures
-- [x] Script to convert original UCE checkpoints
+- [x] `transformers`-compatible model (`UCEConfig`, `UCEModel`) for both
+      released models: **UCE-100M** (4 layers) and **UCE-650M** (33 layers)
+- [x] Script to convert original UCE checkpoints and build one self-contained
+      Hugging Face repo per model
 - [x] AnnData preprocessing / cell-sentence processor (`UCEProcessor`)
 - [x] End-to-end example on 10x PBMCs (`example.py`)
 - [ ] Numerical parity check against original UCE embeddings (`X_uce`)
@@ -31,11 +32,19 @@ with `AutoModel.from_pretrained(...)` and shared on the Hugging Face Hub.
 
 ## Installation
 
+We recommend using **uv** to manage the Python environment and all packages.
+[Install uv](https://docs.astral.sh/uv/getting-started/installation/), then run:
+
 ```bash
 git clone <this-repo-url> UCE-Modern
 cd UCE-Modern
-pip install -r requirements.txt
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install -r requirements.txt
 ```
+
+Keep this environment activated when running the examples below. Use
+`uv pip install <package>` to install additional packages in the same environment.
 
 Dependencies are kept minimal: `torch`, `einops`, `scanpy`, `accelerate`,
 `transformers` (their transitive dependencies cover numpy, pandas, scipy,
@@ -46,31 +55,42 @@ anndata, huggingface_hub, safetensors, etc.).
 ### Quick start: embed PBMCs
 
 ```bash
-python example.py --n-cells 300 --models 4 33
+python example.py --n-cells 300 --models uce-100m uce-650m
 ```
 
 This downloads the original UCE model files from figshare into `model_files/`
-(several GB), converts both checkpoints, loads them with `AutoModel`, embeds a
-sample of the original UCE 10k PBMC dataset (`model_files/10k_pbmcs_proc.h5ad`;
-use `--adata` for your own raw-count AnnData), runs sanity checks, and writes
-`outputs/pbmc_uce.h5ad` with embeddings in `.obsm["X_uce_4l"]` / `["X_uce_33l"]`.
+(several GB), builds a Hub repo folder for each model in `converted/<model>`,
+loads them with `AutoModel`, embeds a sample of the original UCE 10k PBMC dataset
+(`model_files/10k_pbmcs_proc.h5ad`; use `--adata` for your own raw-count AnnData),
+runs sanity checks, and writes `outputs/pbmc_uce.h5ad` with embeddings in
+`.obsm["X_uce_100m"]` / `["X_uce_650m"]`.
 
-### Convert an original checkpoint
+### Build a Hugging Face repo per model
 
-Download an original checkpoint from the
-[UCE model files on figshare](https://figshare.com/articles/dataset/Universal_Cell_Embedding_Model_Files/24320806)
-(the 4-layer model is also fetched automatically by `example.py`), then:
+UCE-100M and UCE-650M are published as separate Hub repos, each self-contained
+and loadable on its own:
 
 ```bash
-# Layer count and hidden sizes are read from the checkpoint.
-python scripts/convert_original_checkpoint.py \
-    --checkpoint model_files/4layer_model.torch --out converted/uce-4l
-
-# 33-layer model, and push to the Hub
-python scripts/convert_original_checkpoint.py \
-    --checkpoint model_files/33l_8ep_1024t_1280.torch \
-    --out converted/uce-33l --push <hf-user>/uce-33l
+python scripts/build_hub_repo.py --model uce-100m --push <hf-user>/uce-100m
+python scripts/build_hub_repo.py --model uce-650m --push <hf-user>/uce-650m
 ```
+
+Each build downloads what it needs from the
+[UCE model files on figshare](https://figshare.com/articles/dataset/Universal_Cell_Embedding_Model_Files/24320806)
+and writes `converted/<model>/`:
+
+| File | Size | Purpose |
+| --- | --- | --- |
+| `model.safetensors` | 3.4 GB / 5.7 GB | Weights, including the frozen ESM2 token table |
+| `config.json` | — | `UCEConfig` with `auto_map` for `trust_remote_code` |
+| `configuration_uce.py`, `modeling_uce.py` | — | Model code |
+| `processing_uce.py` | — | `UCEProcessor` |
+| `gene_vocab.csv` | 5 MB | Per-species gene → token id, chromosome, start |
+| `README.md` | — | Model card from `model_cards/<model>.md` |
+| `LICENSE` | — | MIT |
+
+Omit `--push` to build locally only. To convert an arbitrary checkpoint
+(weights and code only), use `scripts/convert_original_checkpoint.py`.
 
 ### Load the model
 
@@ -78,14 +98,16 @@ python scripts/convert_original_checkpoint.py \
 import uce_modern  # registers UCE with AutoConfig / AutoModel
 from transformers import AutoModel
 
-model = AutoModel.from_pretrained("converted/uce-4l").eval()
+model = AutoModel.from_pretrained("converted/uce-100m").eval()
 
 # From the Hub (modeling code is uploaded alongside the weights):
-# model = AutoModel.from_pretrained("<hf-user>/uce-4l", trust_remote_code=True)
+# model = AutoModel.from_pretrained("<hf-user>/uce-100m", trust_remote_code=True)
 
 from uce_modern import UCEProcessor
 
-processor = UCEProcessor.from_model_files("model_files", species="human")
+# Local folder or Hub repo; needs only gene_vocab.csv + config.json, not the
+# protein embeddings. UCEProcessor.from_model_files("model_files") also works.
+processor = UCEProcessor.from_pretrained("converted/uce-100m", species="human")
 adata = processor.prepare_adata(adata)   # raw counts, gene symbols as var_names
 batch = processor(adata[:16], seed=0)    # {"input_ids", "attention_mask"}
 

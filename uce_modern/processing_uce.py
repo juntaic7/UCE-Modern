@@ -11,11 +11,12 @@ Mirrors the original pipeline (``data_proc/data_utils.py`` + ``eval_data.py``):
 """
 from __future__ import annotations
 
+import json
 import pickle
 import tarfile
 import urllib.request
 from pathlib import Path
-from typing import Dict, Iterator, Optional
+from typing import Dict, Iterator, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -32,8 +33,17 @@ MODEL_FILE_URLS = {
     "33l_8ep_1024t_1280.torch": FIGSHARE + "43423236",
 }
 
-# Checkpoint filenames as released on figshare (and as the original UCE code expects).
-CHECKPOINT_FILES = {4: "4layer_model.torch", 33: "33l_8ep_1024t_1280.torch"}
+# Released checkpoints by model name: UCE-100M is the 4-layer model, UCE-650M the
+# 33-layer one. Filenames as on figshare (and as the original UCE code expects).
+CHECKPOINT_FILES = {"uce-100m": "4layer_model.torch", "uce-650m": "33l_8ep_1024t_1280.torch"}
+
+# Compact processor data shipped in each Hub repo instead of the ~2.6 GB protein
+# embeddings: per species, gene symbol -> token id, chromosome code, genomic start.
+GENE_VOCAB_FILE = "gene_vocab.csv"
+
+# Processor settings read from the model's config.json in ``UCEProcessor.from_pretrained``.
+_CONFIG_KEYS = ("sample_size", "pad_length", "pad_token_idx", "chrom_token_right_idx",
+                "cls_token_idx", "chrom_token_offset")
 
 SPECIES_TO_PE_FILE = {
     "human": "Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt",
@@ -108,6 +118,50 @@ def _load_pt(path: Path):
         return torch.load(path, map_location="cpu", weights_only=False)
 
 
+def build_gene_vocab(
+    model_files_dir: str | Path = "model_files",
+    species: Optional[Sequence[str]] = None,
+    download: bool = True,
+) -> pd.DataFrame:
+    """Build the gene vocabulary from the original UCE model files.
+
+    Returns one row per (species, gene) that has both an ESM2 protein embedding
+    and a chromosome position, with columns ``species, gene_symbol, token_id,
+    chrom_code, start``. ``species=None`` builds all species in SPECIES_TO_PE_FILE.
+    """
+    root = Path(model_files_dir)
+    if download:
+        for name in ("species_chrom.csv", "species_offsets.pkl", "protein_embeddings.tar.gz"):
+            download_model_file(name, root)
+    with open(root / "species_offsets.pkl", "rb") as f:
+        offsets = pickle.load(f)
+
+    # Chromosome codes are categories over ALL species, as in the original.
+    chrom = pd.read_csv(root / "species_chrom.csv")
+    chrom["spec_chrom"] = pd.Categorical(chrom["species"] + "_" + chrom["chromosome"])
+    chrom["chrom_code"] = chrom["spec_chrom"].cat.codes.astype(np.int64)
+    chrom["gene_symbol"] = chrom["gene_symbol"].astype(str).str.upper()
+
+    frames = []
+    for sp in species or SPECIES_TO_PE_FILE:
+        # Token ids: position in the species' protein-embedding dict + species offset.
+        pe = _load_pt(root / "protein_embeddings" / SPECIES_TO_PE_FILE[sp])
+        gene_to_token: Dict[str, int] = {}
+        for i, gene in enumerate(pe.keys()):
+            gene_to_token.setdefault(gene.upper(), i + offsets[sp])
+        del pe
+        sp_chrom = chrom[chrom["species"] == sp].drop_duplicates("gene_symbol")
+        sp_chrom = sp_chrom[sp_chrom["gene_symbol"].isin(gene_to_token)]
+        frames.append(pd.DataFrame({
+            "species": sp,
+            "gene_symbol": sp_chrom["gene_symbol"].to_numpy(),
+            "token_id": sp_chrom["gene_symbol"].map(gene_to_token).to_numpy(np.int64),
+            "chrom_code": sp_chrom["chrom_code"].to_numpy(),
+            "start": sp_chrom["start"].to_numpy(),
+        }))
+    return pd.concat(frames, ignore_index=True)
+
+
 class UCEProcessor:
     """Builds UCE input_ids / attention_mask from an AnnData of raw counts."""
 
@@ -134,6 +188,16 @@ class UCEProcessor:
         self.chrom_token_offset = chrom_token_offset
 
     @classmethod
+    def from_gene_vocab(cls, vocab: pd.DataFrame, species: str = "human", **kwargs) -> "UCEProcessor":
+        """Build a processor from a ``build_gene_vocab`` table (or its saved CSV)."""
+        vocab = vocab[vocab["species"] == species]
+        if vocab.empty:
+            raise ValueError(f"No genes for species {species!r}; available: {sorted(SPECIES_TO_PE_FILE)}")
+        gene_to_token = dict(zip(vocab["gene_symbol"], vocab["token_id"].astype(int)))
+        chrom = vocab.set_index("gene_symbol")[["chrom_code", "start"]]
+        return cls(gene_to_token, chrom, species=species, **kwargs)
+
+    @classmethod
     def from_model_files(
         cls,
         model_files_dir: str | Path = "model_files",
@@ -141,28 +205,38 @@ class UCEProcessor:
         download: bool = True,
         **kwargs,
     ) -> "UCEProcessor":
-        root = Path(model_files_dir)
-        if download:
-            for name in ("species_chrom.csv", "species_offsets.pkl", "protein_embeddings.tar.gz"):
-                download_model_file(name, root)
+        """Build a processor from the original UCE model files (downloaded from figshare)."""
+        vocab = build_gene_vocab(model_files_dir, species=[species], download=download)
+        return cls.from_gene_vocab(vocab, species=species, **kwargs)
 
-        # Token ids: position in the species' protein-embedding dict + species offset.
-        pe = _load_pt(root / "protein_embeddings" / SPECIES_TO_PE_FILE[species])
-        with open(root / "species_offsets.pkl", "rb") as f:
-            offset = pickle.load(f)[species]
-        gene_to_token: Dict[str, int] = {}
-        for i, gene in enumerate(pe.keys()):
-            gene_to_token.setdefault(gene.upper(), i + offset)
-        del pe
+    @classmethod
+    def from_pretrained(
+        cls,
+        pretrained_model_name_or_path: str | Path,
+        species: str = "human",
+        revision: Optional[str] = None,
+        **kwargs,
+    ) -> "UCEProcessor":
+        """Load from a converted model directory or Hub repo (e.g. ``<hf-user>/uce-100m``).
 
-        # Chromosome codes are categories over ALL species, as in the original.
-        chrom = pd.read_csv(root / "species_chrom.csv")
-        chrom["spec_chrom"] = pd.Categorical(chrom["species"] + "_" + chrom["chromosome"])
-        chrom["chrom_code"] = chrom["spec_chrom"].cat.codes.astype(np.int64)
-        chrom = chrom[chrom["species"] == species].copy()
-        chrom["gene_symbol"] = chrom["gene_symbol"].astype(str).str.upper()
-        chrom = chrom.drop_duplicates("gene_symbol").set_index("gene_symbol")[["chrom_code", "start"]]
-        return cls(gene_to_token, chrom, species=species, **kwargs)
+        Reads ``gene_vocab.csv`` and the sampling settings in ``config.json``;
+        ``kwargs`` override the config values.
+        """
+        root = Path(pretrained_model_name_or_path)
+        if root.is_dir():
+            vocab_path, config_path = root / GENE_VOCAB_FILE, root / "config.json"
+        else:
+            from huggingface_hub import hf_hub_download
+
+            repo = str(pretrained_model_name_or_path)
+            vocab_path = hf_hub_download(repo, GENE_VOCAB_FILE, revision=revision)
+            config_path = hf_hub_download(repo, "config.json", revision=revision)
+        with open(config_path) as f:
+            config = json.load(f)
+        kwargs = {**{k: config[k] for k in _CONFIG_KEYS if k in config}, **kwargs}
+        # keep_default_na=False: gene symbols such as "NA" must stay strings.
+        vocab = pd.read_csv(vocab_path, dtype={"species": str, "gene_symbol": str}, keep_default_na=False)
+        return cls.from_gene_vocab(vocab, species=species, **kwargs)
 
     def prepare_adata(self, adata: sc.AnnData, filter: bool = True) -> sc.AnnData:
         """Filter cells/genes and attach per-gene token, chromosome, and start.

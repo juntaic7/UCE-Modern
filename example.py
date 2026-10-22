@@ -1,10 +1,11 @@
-"""End-to-end example: load the 4- and 33-layer UCE models through
+"""End-to-end example: load UCE-100M (4 layers) and UCE-650M (33 layers) through
 ``transformers.AutoModel`` and embed a sample of the 10k PBMC dataset that
 ships with the original UCE model files (``model_files/10k_pbmcs_proc.h5ad``).
 
-    python example.py --n-cells 300 --models 4 33
+    python example.py --n-cells 300 --models uce-100m uce-650m
 
-The first run converts each checkpoint in ``model_files/`` into ``converted/``.
+The first run builds each model's Hub repo folder (``converted/<model>``) from the
+original files in ``model_files/``; the model and processor are loaded from it.
 """
 import argparse
 import gc
@@ -17,8 +18,8 @@ from transformers import AutoModel
 
 import uce_modern  # noqa: F401  (registers "uce" with AutoConfig/AutoModel)
 from uce_modern import UCEModel
-from uce_modern.convert import convert_original_checkpoint
-from uce_modern.processing_uce import CHECKPOINT_FILES, UCEProcessor, download_model_file
+from uce_modern.convert import build_hub_repo
+from uce_modern.processing_uce import CHECKPOINT_FILES, UCEProcessor
 
 
 LABEL_KEYS = ("cell_type", "celltype", "cell_types", "str_labels", "labels", "leiden", "louvain")
@@ -47,18 +48,22 @@ def find_label_key(adata, requested=None):
     return next((k for k in LABEL_KEYS if k in adata.obs), None)
 
 
-def load_model(nlayers: int, model_files: str, converted_dir: str) -> UCEModel:
-    hf_dir = Path(converted_dir) / f"uce-{nlayers}l"
-    if not (hf_dir / "config.json").exists():
-        ckpt = download_model_file(CHECKPOINT_FILES[nlayers], model_files)
-        print(f"Converting {ckpt} -> {hf_dir}")
-        convert_original_checkpoint(ckpt, hf_dir)
+def ensure_repo(name: str, model_files: str, converted_dir: str) -> Path:
+    hf_dir = Path(converted_dir) / name
+    if not (hf_dir / "README.md").exists():  # written last by build_hub_repo
+        print(f"Building {name} -> {hf_dir}")
+        build_hub_repo(name, hf_dir, model_files)
+    return hf_dir
+
+
+def load_model(hf_dir: Path) -> UCEModel:
     model = AutoModel.from_pretrained(hf_dir)  # tests the transformers loading path
 
     assert isinstance(model, UCEModel), type(model)
-    assert model.config.nlayers == nlayers == len(model.transformer_encoder.layers)
+    assert model.config.nlayers == len(model.transformer_encoder.layers)
     n_params = sum(p.numel() for n, p in model.named_parameters() if not n.startswith("pe_embedding"))
-    print(f"Loaded {nlayers}-layer UCE from {hf_dir} ({n_params / 1e6:.0f}M params excl. token table)")
+    print(f"Loaded {model.config.nlayers}-layer UCE from {hf_dir} "
+          f"({n_params / 1e6:.0f}M params excl. token table)")
     return model
 
 
@@ -91,7 +96,7 @@ def check_embeddings(name, emb, labels, n_cells, dim):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--models", type=int, nargs="+", default=[4, 33], choices=[4, 33])
+    ap.add_argument("--models", nargs="+", default=list(CHECKPOINT_FILES), choices=list(CHECKPOINT_FILES))
     ap.add_argument("--n-cells", type=int, default=300)
     ap.add_argument("--batch-size", type=int, default=16)
     ap.add_argument("--seed", type=int, default=0)
@@ -105,10 +110,13 @@ def main():
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = ap.parse_args()
 
+    hf_dirs = {name: ensure_repo(name, args.model_files, args.converted_dir) for name in args.models}
+
     # 1. Data: filter the full dataset (as the original does), then sample cells.
+    # Both models share the same gene vocab, so either repo's processor will do.
     pbmc = load_pbmc(args.adata)
     print(f"Loaded {args.adata}: {pbmc.n_obs} cells x {pbmc.n_vars} genes")
-    processor = UCEProcessor.from_model_files(args.model_files, species="human")
+    processor = UCEProcessor.from_pretrained(hf_dirs[args.models[0]], species="human")
     adata = processor.prepare_adata(pbmc, filter=True)
     rng = np.random.default_rng(args.seed)
     idx = np.sort(rng.choice(adata.n_obs, size=min(args.n_cells, adata.n_obs), replace=False))
@@ -120,10 +128,10 @@ def main():
 
     # 2. Models: same seed -> both models see identical cell sentences.
     sims = {}
-    for nlayers in args.models:
-        model = load_model(nlayers, args.model_files, args.converted_dir)
+    for name, hf_dir in hf_dirs.items():
+        model = load_model(hf_dir)
         emb = embed(model, processor, adata, args.batch_size, args.seed, args.device)
-        key = f"X_uce_{nlayers}l"
+        key = f"X_{name.replace('-', '_')}"
         adata.obsm[key] = emb
         sims[key] = check_embeddings(key, emb, labels, adata.n_obs, model.config.output_dim)
         del model
@@ -133,7 +141,7 @@ def main():
 
     if len(sims) == 2:
         a, b = (s[np.triu_indices_from(s, k=1)] for s in sims.values())
-        print(f"Agreement of cell-cell similarities, 4l vs 33l: Pearson r = {np.corrcoef(a, b)[0, 1]:.3f}")
+        print(f"Agreement of cell-cell similarities, {' vs '.join(sims)}: Pearson r = {np.corrcoef(a, b)[0, 1]:.3f}")
 
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     adata.write_h5ad(args.out)
