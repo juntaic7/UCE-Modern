@@ -6,7 +6,7 @@ A modernized reimplementation of **Universal Cell Embeddings (UCE)**.
 > by Yanay Rosen, Yusuf Roohani, Jure Leskovec, et al. All credit for the model,
 > training, and pretrained weights goes to the original authors.
 
-## Why this fork?
+## Why this reimplementation?
 
 The original UCE code pins older dependencies (e.g. `torch==2.1.1`, `numpy==1.26`,
 `requests==2.25.1`, `urllib3==1.26`), which can be hard to install alongside a
@@ -24,8 +24,9 @@ with `AutoModel.from_pretrained(...)` and shared on the Hugging Face Hub.
 - [x] `transformers`-compatible model (`UCEConfig`, `UCEModel`) for both the
       4-layer and 33-layer UCE architectures
 - [x] Script to convert original UCE checkpoints
+- [x] AnnData preprocessing / cell-sentence processor (`UCEProcessor`)
+- [x] End-to-end example on 10x PBMCs (`example.py`)
 - [ ] Numerical parity check against original UCE embeddings (`X_uce`)
-- [ ] AnnData preprocessing / cell-sentence processor
 - [ ] Pretrained weights published on the Hugging Face Hub
 
 ## Installation
@@ -42,19 +43,32 @@ anndata, huggingface_hub, safetensors, etc.).
 
 ## Usage
 
-### Convert an original checkpoint
-
-Download an original checkpoint (e.g. `4layer_model.torch`) from the
-[original repo](https://github.com/snap-stanford/UCE), then:
+### Quick start: embed PBMCs
 
 ```bash
-# 4-layer model
+python example.py --n-cells 300 --models 4 33
+```
+
+This downloads the original UCE model files from figshare into `model_files/`
+(several GB), converts both checkpoints, loads them with `AutoModel`, embeds a
+sample of the original UCE 10k PBMC dataset (`model_files/10k_pbmcs_proc.h5ad`;
+use `--adata` for your own raw-count AnnData), runs sanity checks, and writes
+`outputs/pbmc_uce.h5ad` with embeddings in `.obsm["X_uce_4l"]` / `["X_uce_33l"]`.
+
+### Convert an original checkpoint
+
+Download an original checkpoint from the
+[UCE model files on figshare](https://figshare.com/articles/dataset/Universal_Cell_Embedding_Model_Files/24320806)
+(the 4-layer model is also fetched automatically by `example.py`), then:
+
+```bash
+# Layer count and hidden sizes are read from the checkpoint.
 python scripts/convert_original_checkpoint.py \
-    --checkpoint model_files/4layer_model.torch --nlayers 4 --out converted/uce-4l
+    --checkpoint model_files/4layer_model.torch --out converted/uce-4l
 
 # 33-layer model, and push to the Hub
 python scripts/convert_original_checkpoint.py \
-    --checkpoint model_files/33l_8ep_1024t_1280.torch --nlayers 33 \
+    --checkpoint model_files/33l_8ep_1024t_1280.torch \
     --out converted/uce-33l --push <hf-user>/uce-33l
 ```
 
@@ -69,7 +83,13 @@ model = AutoModel.from_pretrained("converted/uce-4l").eval()
 # From the Hub (modeling code is uploaded alongside the weights):
 # model = AutoModel.from_pretrained("<hf-user>/uce-4l", trust_remote_code=True)
 
-out = model(input_ids=input_ids, attention_mask=attention_mask)
+from uce_modern import UCEProcessor
+
+processor = UCEProcessor.from_model_files("model_files", species="human")
+adata = processor.prepare_adata(adata)   # raw counts, gene symbols as var_names
+batch = processor(adata[:16], seed=0)    # {"input_ids", "attention_mask"}
+
+out = model(**batch)
 out.cell_embedding      # [batch, 1280]  L2-normalized cell embedding (X_uce)
 out.last_hidden_state   # [batch, seq_len, 1280]  per-token outputs
 ```
@@ -93,13 +113,13 @@ tokens and 0 for padding.
 If you use this code, please cite the original UCE paper:
 
 ```bibtex
-@article{rosen2023universal,
-  title   = {Universal Cell Embeddings: A Foundation Model for Cell Biology},
-  author  = {Rosen, Yanay and Roohani, Yusuf and Agrawal, Ayush and Samotorcan, Leon
-             and Tabula Sapiens Consortium and Quake, Stephen R. and Leskovec, Jure},
-  journal = {bioRxiv},
-  year    = {2023},
-  doi     = {10.1101/2023.11.28.568918}
+@article{rosen2026universal,
+  title={Universal cell embedding provides a foundation model for cell biology},
+  author={Rosen, Yanay and Roohani, Yusuf and Agrawal, Ayush and Samotor{\v{c}}an, Leon and Tabula Sapiens Consortium and Quake, Stephen R and Leskovec, Jure},
+  journal={Nature},
+  pages={1--9},
+  year={2026},
+  publisher={Nature Publishing Group UK, London}
 }
 ```
 

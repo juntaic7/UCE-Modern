@@ -218,3 +218,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# UCE-Modern: downloaded model files, converted checkpoints, example data/outputs
+model_files/
+converted/
+data/
+outputs/

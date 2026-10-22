@@ -59,4 +59,6 @@ class UCEConfig(PretrainedConfig):
         # to the attention logits instead of masking padded keys. Keep True to
         # reproduce the released checkpoints; set False for true masking.
         self.legacy_float_padding_mask = legacy_float_padding_mask
-        super().__init__(pad_token_id=pad_token_idx, **kwargs)
+        # config.json already stores pad_token_id on reload; don't pass it twice.
+        kwargs.setdefault("pad_token_id", pad_token_idx)
+        super().__init__(**kwargs)
