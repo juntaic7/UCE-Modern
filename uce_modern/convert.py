@@ -14,6 +14,9 @@ from .processing_uce import CHECKPOINT_FILES, GENE_VOCAB_FILE, build_gene_vocab,
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 MODEL_CARDS_DIR = _REPO_ROOT / "model_cards"
 
+# Hub repo name for each released model; the model cards link to each other by these.
+HUB_REPO_NAMES = {"uce-100m": "UCE-Modern-100m", "uce-650m": "UCE-Modern-650m"}
+
 _LAYER_KEY = re.compile(r"^transformer_encoder\.layers\.(\d+)\.")
 
 
@@ -66,9 +69,13 @@ def build_hub_repo(
     Writes the converted weights, config and modeling code, the processor's
     ``gene_vocab.csv`` and ``processing_uce.py``, plus ``model_cards/<name>.md``
     as README.md (with ``{repo_id}`` and ``{owner}`` filled in) and the LICENSE.
+    ``repo_id`` must be ``<owner>/<HUB_REPO_NAMES[name]>``.
     """
     if name not in CHECKPOINT_FILES:
         raise ValueError(f"Unknown model {name!r}; choose from {sorted(CHECKPOINT_FILES)}")
+    expected = HUB_REPO_NAMES[name]
+    if repo_id is not None and repo_id.split("/")[-1].lower() != expected.lower():
+        raise ValueError(f"{name} must be pushed to a repo named {expected!r}, got {repo_id!r}")
     out = Path(out_dir)
     root = Path(model_files_dir)
     ckpt = download_model_file(CHECKPOINT_FILES[name], root) if download else root / CHECKPOINT_FILES[name]
@@ -77,7 +84,7 @@ def build_hub_repo(
     build_gene_vocab(root, download=download).to_csv(out / GENE_VOCAB_FILE, index=False)
     shutil.copy(processing_uce.__file__, out / "processing_uce.py")
     shutil.copy(_REPO_ROOT / "LICENSE", out / "LICENSE")
-    repo_id = repo_id or f"<hf-user>/{name}"
+    repo_id = repo_id or f"<hf-user>/{expected}"
     card = (MODEL_CARDS_DIR / f"{name}.md").read_text()
     card = card.replace("{repo_id}", repo_id).replace("{owner}", repo_id.split("/")[0])
     (out / "README.md").write_text(card)  # written last: marks a complete build

@@ -11,7 +11,7 @@ tags:
   - uce
 ---
 
-# UCE-650M (Universal Cell Embeddings, 33-layer)
+# UCE-Modern-650m (Universal Cell Embeddings, 33-layer)
 
 The 33-layer **Universal Cell Embeddings (UCE)** model, packaged for Hugging Face
 `transformers` by [UCE-Modern](https://github.com/juntaic7/UCE-Modern). UCE maps a
@@ -24,7 +24,7 @@ Only the format has changed. All credit for the model and its training goes to
 the original authors.
 
 This is the model the UCE paper uses for its main results. For a smaller,
-faster model, see the 4-layer [UCE-100M](https://huggingface.co/{owner}/uce-100m).
+faster model, see the 4-layer [UCE-Modern-100m](https://huggingface.co/{owner}/UCE-Modern-100m).
 
 | | |
 | --- | --- |
@@ -38,8 +38,12 @@ faster model, see the 4-layer [UCE-100M](https://huggingface.co/{owner}/uce-100m
 ## Usage
 
 ```bash
-pip install torch transformers scanpy
+pip install torch transformers einops scanpy
 ```
+
+Dependencies are unpinned, and nothing in the model depends on a particular CUDA
+version. Any recent PyTorch build should work: CUDA 13, CUDA 12 or CPU only.
+Tested with PyTorch 2.14 (CUDA 13.0) and `transformers` 5.20.
 
 ```python
 import scanpy as sc

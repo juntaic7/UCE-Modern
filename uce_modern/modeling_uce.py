@@ -6,6 +6,7 @@ from typing import Optional
 
 import torch
 import torch.nn.functional as F
+from einops import rearrange
 from torch import nn
 from transformers import PreTrainedModel
 from transformers.utils import ModelOutput
@@ -28,11 +29,10 @@ class UCEPositionalEncoding(nn.Module):
     def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 1536):
         super().__init__()
         self.dropout = nn.Dropout(p=dropout)
-        position = torch.arange(max_len).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
-        pe = torch.zeros(max_len, 1, d_model)
-        pe[:, 0, 0::2] = torch.sin(position * div_term)
-        pe[:, 0, 1::2] = torch.cos(position * div_term)
+        angles = torch.outer(torch.arange(max_len), div_term)  # [L, D/2]
+        # Interleave: sin at even channels, cos at odd.
+        pe = rearrange([angles.sin(), angles.cos()], "two l half -> l 1 (half two)")
         self.register_buffer("pe", pe)  # persistent: present in original checkpoints
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -128,7 +128,7 @@ class UCEModel(UCEPreTrainedModel):
         if attention_mask is None:
             attention_mask = torch.ones(inputs_embeds.shape[:2], device=inputs_embeds.device)
 
-        src = inputs_embeds.transpose(0, 1)  # -> [L, B, token_dim]
+        src = rearrange(inputs_embeds, "b l d -> l b d")
         src = self.encoder(src) * math.sqrt(self.d_model)
         src = self.pos_encoder(src)
 
@@ -140,7 +140,7 @@ class UCEModel(UCEPreTrainedModel):
 
         gene_output = self.decoder(hidden)                     # [L, B, output_dim]
         cell_embedding = F.normalize(gene_output[0], dim=1)    # CLS token
-        gene_output = gene_output.transpose(0, 1)              # -> [B, L, output_dim]
+        gene_output = rearrange(gene_output, "l b d -> b l d")
 
         if not return_dict:
             return gene_output, cell_embedding

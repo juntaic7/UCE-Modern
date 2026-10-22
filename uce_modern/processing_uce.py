@@ -217,7 +217,7 @@ class UCEProcessor:
         revision: Optional[str] = None,
         **kwargs,
     ) -> "UCEProcessor":
-        """Load from a converted model directory or Hub repo (e.g. ``<hf-user>/uce-100m``).
+        """Load from a converted model directory or Hub repo (e.g. ``<hf-user>/UCE-Modern-100m``).
 
         Reads ``gene_vocab.csv`` and the sampling settings in ``config.json``;
         ``kwargs`` override the config values.

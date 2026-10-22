@@ -1,4 +1,4 @@
-"""End-to-end example: load UCE-100M (4 layers) and UCE-650M (33 layers) through
+"""End-to-end example: load UCE-Modern-100m (4 layers) and UCE-Modern-650m (33 layers) through
 ``transformers.AutoModel`` and embed a sample of the 10k PBMC dataset that
 ships with the original UCE model files (``model_files/10k_pbmcs_proc.h5ad``).
 

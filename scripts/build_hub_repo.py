@@ -1,11 +1,12 @@
 """Build (and optionally push) the Hugging Face repo for one released UCE model.
 
     python scripts/build_hub_repo.py --model uce-100m --out converted/uce-100m \
-        [--push <hf-user>/uce-100m]
+        [--push <hf-user>/UCE-Modern-100m]
 
-uce-100m is the 4-layer model, uce-650m the 33-layer one. Each repo is
-self-contained: weights, config, modeling and processing code, gene vocab,
-model card, and license. Original files are downloaded into --model-files.
+uce-100m is the 4-layer model (Hub repo UCE-Modern-100m), uce-650m the 33-layer
+one (UCE-Modern-650m). Each repo is self-contained: weights, config, modeling and
+processing code, gene vocab, model card, and license. Original files are
+downloaded into --model-files.
 """
 import argparse
 import sys
@@ -21,7 +22,7 @@ def main():
     ap.add_argument("--model", required=True, choices=sorted(CHECKPOINT_FILES))
     ap.add_argument("--out", default=None, help="Output folder (default: converted/<model>)")
     ap.add_argument("--model-files", default="model_files")
-    ap.add_argument("--push", default=None, help="Hub repo id, e.g. user/uce-100m")
+    ap.add_argument("--push", default=None, help="Hub repo id, e.g. user/UCE-Modern-100m")
     ap.add_argument("--private", action="store_true", help="Create the Hub repo as private")
     args = ap.parse_args()
 
