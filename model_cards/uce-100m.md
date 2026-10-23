@@ -58,7 +58,7 @@ model = AutoModel.from_pretrained(repo, trust_remote_code=True).eval()
 UCEProcessor = get_class_from_dynamic_module("processing_uce.UCEProcessor", repo)
 processor = UCEProcessor.from_pretrained(repo, species="human")
 
-adata = sc.read_h5ad("my_data.h5ad")      # raw counts in .X, gene symbols as var_names
+adata = sc.read_h5ad("my_data.h5ad")      # see "Input data format" below
 adata = processor.prepare_adata(adata)    # filter genes/cells, map genes to tokens
 
 embeddings = []
@@ -70,6 +70,46 @@ adata.obsm["X_uce"] = torch.cat(embeddings).numpy()
 
 If you have the [UCE-Modern](https://github.com/juntaic7/UCE-Modern) package installed,
 you can use `from uce_modern import UCEProcessor` instead of `get_class_from_dynamic_module`.
+
+## Input data format
+
+Before `processor.prepare_adata`, the AnnData **must** have:
+
+| Field | Required | Content |
+| --- | --- | --- |
+| `adata.X` | **Yes** | **Raw integer counts** (e.g. UMI counts), cells × genes, sparse or dense. Not normalized, log-transformed or scaled. |
+| `adata.var_names` | **Yes** | **Gene symbols** of the processor's species (e.g. `CD3E`; matched case-insensitively), unique. Not Ensembl IDs. |
+| `adata.obs` | No | Any cell metadata. Passed through unchanged. |
+
+Keep all genes; don't subset to highly variable genes. `prepare_adata` filters
+genes and cells, drops genes without a protein embedding or chromosome position,
+and adds the per-gene columns the tokenizer (`processor(adata)` /
+`processor.iter_batches(adata)`) reads. They are set for you; don't create them by hand:
+
+| Column | Type | Content |
+| --- | --- | --- |
+| `var["uce_token_id"]` | int | Token id of the gene's ESM2 protein embedding |
+| `var["uce_chrom"]` | int | Chromosome code |
+| `var["uce_start"]` | int | Genomic start position (orders genes within a chromosome) |
+
+Getting common sources into this format:
+
+```python
+# 10x Genomics Cell Ranger output: symbols are already var_names, X holds UMI counts.
+adata = sc.read_10x_h5("filtered_feature_bc_matrix.h5")
+adata.var_names_make_unique()
+
+# CELLxGENE (Discover download or Census AnnData): symbols are in var["feature_name"].
+adata = sc.read_h5ad("cellxgene_download.h5ad")
+if adata.raw is not None:  # Discover files: X is normalized, raw counts are in .raw
+    adata.X = adata.raw.X
+adata.var_names = adata.var["feature_name"].astype(str).to_numpy()
+adata.var_names_make_unique()
+```
+
+The [UCE-Modern](https://github.com/juntaic7/UCE-Modern) package includes
+dataset preprocessors (`uce_modern.preprocessors.read_10x`, `from_cellxgene`)
+that do this conversion, check the result, and handle multi-sample 10x runs.
 
 ## Files
 
