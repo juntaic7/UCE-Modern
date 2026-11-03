@@ -6,8 +6,9 @@
 
 Inputs must be in the UCE input format (raw counts in .X, gene symbols), e.g. the
 output of tools/preprocess_dataset.py. Each ``<name>.h5ad`` gives
-``<out-dir>/<name>_uce_embs.npy``: float32, [cells, 1280], L2-normalised, one row per
-cell in input order, as the original UCE writes it. If ``prepare_adata`` drops cells
+``<out-dir>/<name>_uce_embs_seed<seed>.npy``: float32, [cells, 1280], L2-normalised, one
+row per cell in input order, as the original UCE writes it. The seed suffix keeps runs with
+different gene samplings side by side, for comparison. If ``prepare_adata`` drops cells
 (no counts over UCE genes, or fewer than 25 genes), their obs_names are listed in
 ``<name>_uce_dropped_cells.txt`` and the rows follow the remaining cells.
 
@@ -94,7 +95,7 @@ def embed(model, processor, adata, batch_size, seed, device, num_workers, precis
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("inputs", nargs="+", help="preprocessed .h5ad files")
-    ap.add_argument("--out-dir", required=True, help="folder for <name>_uce_embs.npy")
+    ap.add_argument("--out-dir", required=True, help="folder for <name>_uce_embs_seed<seed>.npy")
     ap.add_argument("--model", default="uce-100m",
                     help=f"{' or '.join(CHECKPOINT_FILES)}, a converted model folder or a Hub repo "
                          "(default: uce-100m)")
@@ -114,7 +115,7 @@ def main():
     args = ap.parse_args()
 
     out_dir = Path(args.out_dir)
-    jobs = [(Path(p), out_dir / f"{Path(p).stem}_uce_embs.npy") for p in args.inputs]
+    jobs = [(Path(p), out_dir / f"{Path(p).stem}_uce_embs_seed{args.seed}.npy") for p in args.inputs]
     if not args.overwrite:
         for inp, out in jobs:
             if out.exists():

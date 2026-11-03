@@ -5,10 +5,11 @@
         --adata-dir benchmark/raw_datasets
 
 For each file, prints shape, dtype and basic statistics (NaN/Inf, all-zero and
-duplicate rows, row norms). With --adata-dir, ``<name>_uce_embs.npy`` is matched to
-``<name>.h5ad`` and the cell counts are compared.
+duplicate rows, row norms). With --adata-dir, ``<name>_uce_embs[_seed<seed>].npy`` is
+matched to ``<name>.h5ad`` and the cell counts are compared.
 """
 import argparse
+import re
 from pathlib import Path
 
 import numpy as np
@@ -67,7 +68,7 @@ def main():
     for f in files:
         n = summarise(f)
         if args.adata_dir:
-            h5ad = Path(args.adata_dir) / f"{f.stem.removesuffix('_uce_embs')}.h5ad"
+            h5ad = Path(args.adata_dir) / f"{re.sub(r'_uce_embs(_seed\d+)?$', '', f.stem)}.h5ad"
             if h5ad.exists():
                 n_obs = adata_n_obs(h5ad)
                 status = "match" if n == n_obs else f"differ by {n_obs - n:,}"

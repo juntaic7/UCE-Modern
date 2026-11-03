@@ -1,0 +1,209 @@
+{
+  "dataset": "neurips_2021",
+  "created": "2026-11-03 12:48:02",
+  "reference": {
+    "path": "benchmark/embedding_original/neurips_2021_uce_embs.npy",
+    "seed": null,
+    "shape": [
+      90261,
+      1280
+    ],
+    "dtype": "float32",
+    "rows_with_nan": 0,
+    "rows_with_inf": 0,
+    "row_l2_norm": {
+      "mean": 1.0,
+      "std": 3.27517e-08,
+      "min": 1.0,
+      "p1": 1.0,
+      "p5": 1.0,
+      "p25": 1.0,
+      "median": 1.0,
+      "p75": 1.0,
+      "p95": 1.0,
+      "p99": 1.0,
+      "max": 1.0
+    }
+  },
+  "new": {
+    "path": "benchmark/embedding/neurips_2021_uce_embs_seed0.npy",
+    "seed": 0,
+    "shape": [
+      90261,
+      1280
+    ],
+    "dtype": "float32",
+    "rows_with_nan": 0,
+    "rows_with_inf": 0,
+    "row_l2_norm": {
+      "mean": 1.0,
+      "std": 3.2745e-08,
+      "min": 1.0,
+      "p1": 1.0,
+      "p5": 1.0,
+      "p25": 1.0,
+      "median": 1.0,
+      "p75": 1.0,
+      "p95": 1.0,
+      "p99": 1.0,
+      "max": 1.0
+    }
+  },
+  "sample_seed": 0,
+  "note": "UCE samples each cell's genes at random (the original UCE with an unseeded RNG), so an exact match is impossible; compare 'same cell' scores with the random-pair baseline and chance levels, and with a seed-vs-seed comparison of UCE-Modern.",
+  "summary": {
+    "n_cells": 90261,
+    "embedding_dim": 1280,
+    "cosine_similarity_same_cell_mean": 0.926531,
+    "cosine_similarity_same_cell_median": 0.93046,
+    "cosine_similarity_random_pair_mean": 0.403295,
+    "retrieval_top1_accuracy": 0.6028,
+    "knn15_overlap_mean": 0.123733,
+    "linear_cka": 0.977766,
+    "pearson_all_values": 0.926503
+  },
+  "per_cell_cosine_similarity": {
+    "description": "Cosine similarity between each cell's reference and new embedding (1 = same direction).",
+    "mean": 0.926531,
+    "std": 0.0414729,
+    "min": 0.710696,
+    "p1": 0.818494,
+    "p5": 0.852627,
+    "p25": 0.89872,
+    "median": 0.93046,
+    "p75": 0.959451,
+    "p95": 0.985618,
+    "p99": 0.995532,
+    "max": 0.999398,
+    "fraction_at_least": {
+      "0.999": 8.86319e-05,
+      "0.99": 0.0261686,
+      "0.95": 0.330253,
+      "0.9": 0.741062,
+      "0.8": 0.996266
+    }
+  },
+  "random_pair_baseline": {
+    "description": "Cosine similarity between unrelated cells, the level that 'same cell' should clearly exceed. reference_vs_reference: two different cells, both reference; new_vs_reference: a cell's new embedding vs another cell's reference.",
+    "reference_vs_reference": {
+      "mean": 0.403071,
+      "std": 0.188176,
+      "min": -0.202331,
+      "p1": -0.00689618,
+      "p5": 0.0988713,
+      "p25": 0.283035,
+      "median": 0.393309,
+      "p75": 0.502246,
+      "p95": 0.762259,
+      "p99": 0.86953,
+      "max": 0.98281
+    },
+    "new_vs_reference": {
+      "mean": 0.403295,
+      "std": 0.18815,
+      "min": -0.200015,
+      "p1": -0.00777033,
+      "p5": 0.100048,
+      "p25": 0.282721,
+      "median": 0.393469,
+      "p75": 0.502737,
+      "p95": 0.76196,
+      "p99": 0.869469,
+      "max": 0.98247
+    },
+    "same_cell_mean_minus_random_pair_mean": 0.523236
+  },
+  "per_cell_l2_distance": {
+    "description": "Euclidean distance between each cell's reference and new embedding (both are L2-normalised, so 0 = identical and 2 = opposite).",
+    "mean": 0.365837,
+    "std": 0.114464,
+    "min": 0.0347096,
+    "p1": 0.0945344,
+    "p5": 0.169597,
+    "p25": 0.284775,
+    "median": 0.372934,
+    "p75": 0.450067,
+    "p95": 0.542905,
+    "p99": 0.602505,
+    "max": 0.760663
+  },
+  "elementwise_difference": {
+    "description": "Over all cells x dimensions: |new - reference|, the relative Frobenius error ||new - reference|| / ||reference||, and the Pearson correlation of all values.",
+    "abs_diff": {
+      "mean": 0.00814431,
+      "std": 0.00696174,
+      "min": 0.0,
+      "p1": 0.000110082,
+      "p5": 0.000551395,
+      "p25": 0.00286178,
+      "median": 0.00634177,
+      "p75": 0.0115533,
+      "p95": 0.021929,
+      "p99": 0.0309927,
+      "max": 0.106198
+    },
+    "relative_frobenius_error": 0.383324,
+    "pearson_all_values": 0.926503,
+    "exactly_equal_fraction": 1.03865e-07
+  },
+  "per_dimension": {
+    "description": "Pearson correlation of each embedding dimension across cells, and agreement of the per-dimension means and standard deviations.",
+    "pearson_across_cells": {
+      "mean": 0.86384,
+      "std": 0.0392082,
+      "min": 0.742368,
+      "p1": 0.775124,
+      "p5": 0.798064,
+      "p25": 0.837344,
+      "median": 0.865658,
+      "p75": 0.89183,
+      "p95": 0.926839,
+      "p99": 0.948966,
+      "max": 0.975279
+    },
+    "pearson_of_dimension_means": 0.999998,
+    "pearson_of_dimension_stds": 0.99997
+  },
+  "retrieval": {
+    "description": "For 5,000 random cells: the rank of the cell's own reference embedding among all 90,261 reference embeddings, by cosine similarity to its new embedding (0 = best match).",
+    "n_queries": 5000,
+    "top1_accuracy": 0.6028,
+    "top10_accuracy": 0.7668,
+    "top100_accuracy": 0.8992,
+    "rank": {
+      "mean": 61.4412,
+      "std": 309.219,
+      "min": 0.0,
+      "p1": 0.0,
+      "p5": 0.0,
+      "p25": 0.0,
+      "median": 0.0,
+      "p75": 7.0,
+      "p95": 278.05,
+      "p99": 1183.24,
+      "max": 7877.0
+    }
+  },
+  "neighbourhood": {
+    "description": "For the same query cells: fraction of the 15 nearest neighbours (cosine, among all cells) shared between the reference and the new embedding space.",
+    "k": 15,
+    "overlap": {
+      "mean": 0.123733,
+      "std": 0.147097,
+      "min": 0.0,
+      "p1": 0.0,
+      "p5": 0.0,
+      "p25": 0.0,
+      "median": 0.0666667,
+      "p75": 0.2,
+      "p95": 0.4,
+      "p99": 0.667333,
+      "max": 1.0
+    },
+    "chance_level": 0.000166187
+  },
+  "global_structure": {
+    "description": "Linear CKA between the two embedding matrices (1 = same geometry up to rotation and isotropic scaling).",
+    "linear_cka": 0.977766
+  }
+}
