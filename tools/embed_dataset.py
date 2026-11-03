@@ -10,6 +10,10 @@ output of tools/preprocess_dataset.py. Each ``<name>.h5ad`` gives
 cell in input order, as the original UCE writes it. If ``prepare_adata`` drops cells
 (no counts over UCE genes, or fewer than 25 genes), their obs_names are listed in
 ``<name>_uce_dropped_cells.txt`` and the rows follow the remaining cells.
+
+--precision: fp32 (default) is strict fp32, for numerical comparison with the original
+UCE; tf32 runs the fp32 matmuls on tensor cores; bf16 and fp16 autocast the forward
+pass (weights stay fp32). Each is faster than the one before and further from fp32.
 """
 import argparse
 import gc
@@ -29,6 +33,9 @@ import uce_modern  # noqa: E402,F401  (registers "uce" with AutoConfig/AutoModel
 from uce_modern.convert import build_hub_repo  # noqa: E402
 from uce_modern.preprocessors import infer_species  # noqa: E402
 from uce_modern.processing_uce import CHECKPOINT_FILES, UCEProcessor  # noqa: E402
+
+PRECISIONS = ("fp32", "tf32", "bf16", "fp16")
+AUTOCAST_DTYPES = {"bf16": torch.bfloat16, "fp16": torch.float16}
 
 
 class CellSentences(Dataset):
@@ -60,7 +67,9 @@ def resolve_model(model, model_files, converted_dir):
 
 
 @torch.inference_mode()
-def embed(model, processor, adata, batch_size, seed, device, num_workers):
+def embed(model, processor, adata, batch_size, seed, device, num_workers, precision="fp32"):
+    autocast = torch.autocast(torch.device(device).type, dtype=AUTOCAST_DTYPES.get(precision),
+                              enabled=precision in AUTOCAST_DTYPES)
     loader = DataLoader(
         CellSentences(processor, adata, batch_size, seed), batch_size=None, num_workers=num_workers,
         pin_memory=device.startswith("cuda"),
@@ -71,7 +80,8 @@ def embed(model, processor, adata, batch_size, seed, device, num_workers):
     n_done, t0 = 0, time.time()
     for i, batch in enumerate(loader):
         batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
-        emb = model(**batch).cell_embedding.float().cpu().numpy()
+        with autocast:
+            emb = model(**batch).cell_embedding.float().cpu().numpy()
         out[n_done:n_done + len(emb)] = emb
         n_done += len(emb)
         if (i + 1) % 50 == 0 or n_done == adata.n_obs:
@@ -92,6 +102,8 @@ def main():
                     help="UCE species (default: from organism metadata, else 'human')")
     ap.add_argument("--batch-size", type=int, default=25, help="cells per batch (original UCE: 25)")
     ap.add_argument("--seed", type=int, default=0, help="seed for sampling the cell sentences")
+    ap.add_argument("--precision", default="fp32", choices=PRECISIONS,
+                    help="fp32 (strict, default), tf32, bf16 or fp16 (autocast); see above")
     ap.add_argument("--no-filter", action="store_true",
                     help="skip prepare_adata's gene (>= 10 cells) and cell (>= 25 genes) filters")
     ap.add_argument("--num-workers", type=int, default=8, help="processes building cell sentences")
@@ -112,12 +124,11 @@ def main():
         return
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Strict fp32 (no TF32 matmuls), so embeddings can be compared numerically with the original UCE.
-    torch.backends.cuda.matmul.allow_tf32 = False
-    torch.backends.cudnn.allow_tf32 = False
+    # TF32 only when asked: plain fp32 must not silently use TF32 matmuls.
+    torch.backends.cuda.matmul.allow_tf32 = torch.backends.cudnn.allow_tf32 = args.precision == "tf32"
     model_path = resolve_model(args.model, args.model_files, args.converted_dir)
     model = AutoModel.from_pretrained(model_path, trust_remote_code=True).to(args.device).eval()
-    print(f"Loaded {model.config.nlayers}-layer UCE from {model_path} on {args.device}")
+    print(f"Loaded {model.config.nlayers}-layer UCE from {model_path} on {args.device} ({args.precision})")
 
     for inp, out in jobs:
         adata = ad.read_h5ad(inp)
@@ -129,7 +140,8 @@ def main():
         del adata
         gc.collect()
 
-        emb = embed(model, processor, prepared, args.batch_size, args.seed, args.device, args.num_workers)
+        emb = embed(model, processor, prepared, args.batch_size, args.seed, args.device, args.num_workers,
+                    args.precision)
         np.save(out, emb)
         print(f"Wrote {out}: {emb.shape}")
         if len(dropped):

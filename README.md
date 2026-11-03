@@ -160,35 +160,6 @@ python tools/preprocess_dataset.py custom other.h5ad --gene-symbol-key gene_symb
 Pass the result to `processor.prepare_adata` (see [Load the model](#load-the-model)), with the
 `species` that matches your data.
 
-### Build a Hugging Face repo per model
-
-[UCE-Modern-100m](https://huggingface.co/jtcao7/UCE-Modern-100m) and
-[UCE-Modern-650m](https://huggingface.co/jtcao7/UCE-Modern-650m) are published as
-separate Hub repos, each self-contained and loadable on its own. To rebuild them,
-or to publish them under your own account:
-
-```bash
-python tools/build_hub_repo.py --model uce-100m --push <hf-user>/UCE-Modern-100m
-python tools/build_hub_repo.py --model uce-650m --push <hf-user>/UCE-Modern-650m
-```
-
-Each build downloads what it needs from the
-[UCE model files on figshare](https://figshare.com/articles/dataset/Universal_Cell_Embedding_Model_Files/24320806)
-and writes `converted/<model>/`:
-
-| File | Size | Purpose |
-| --- | --- | --- |
-| `model.safetensors` | 3.4 GB / 5.7 GB | Weights, including the frozen ESM2 token table |
-| `config.json` | — | `UCEConfig` with `auto_map` for `trust_remote_code` |
-| `configuration_uce.py`, `modeling_uce.py` | — | Model code |
-| `processing_uce.py` | — | `UCEProcessor` |
-| `gene_vocab.csv` | 5 MB | Per-species gene → token id, chromosome, start |
-| `README.md` | — | Model card from `model_cards/<model>.md` |
-| `LICENSE` | — | MIT |
-
-Omit `--push` to build locally only. To convert an arbitrary checkpoint
-(weights and code only), use `tools/convert_original_checkpoint.py`.
-
 ### Load the model
 
 ```python
