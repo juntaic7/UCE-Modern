@@ -16,7 +16,8 @@ alongside a current ML stack or on newer hardware.
 no package versions and makes no assumptions about the CUDA toolkit, so UCE can
 run on whichever recent PyTorch build suits your machine: for example a CUDA 13
 build for newer NVIDIA GPUs, a CUDA 12 build, or CPU only. The original model is
-preserved, and work toward reproducing its embeddings is ongoing.
+preserved, and its embeddings are reproduced up to UCE's random gene sampling (so far
+tested on one dataset; see [Benchmark](#benchmark)).
 
 It is developed and tested with Python 3.12, PyTorch 2.14 (CUDA 13.0) and
 `transformers` 5.20. Older versions may work but have not been tested yet.
@@ -36,7 +37,9 @@ with `AutoModel.from_pretrained(...)` and shared on the Hugging Face Hub.
 - [x] Dataset preprocessors for 10x Genomics, CELLxGENE and NeurIPS 2021 data, plus a
       customizable template for other datasets (`uce_modern/preprocessors/`)
 - [x] End-to-end example on 10x PBMCs (`example.py`)
-- [ ] Numerical parity check against original UCE embeddings (`X_uce`)
+- [x] Statistical parity check against original UCE embeddings: UCE-Modern-650m
+      matches the original as closely as two seeds match each other
+      (see [Benchmark](#benchmark); one dataset so far)
 - [x] Pretrained weights published on the Hugging Face Hub:
       [UCE-Modern-100m](https://huggingface.co/jtcao7/UCE-Modern-100m) and
       [UCE-Modern-650m](https://huggingface.co/jtcao7/UCE-Modern-650m)
@@ -198,6 +201,51 @@ tokens and 0 for padding.
   This behavior is kept by default (`UCEConfig(legacy_float_padding_mask=True)`)
   to reproduce the released weights. Set it to `False` for standard masking
   (embeddings will then differ from the original).
+
+## Benchmark
+
+UCE builds each cell's input by randomly sampling 1,024 genes, weighted by expression.
+The original code does this with an unseeded `np.random`, so its embeddings change
+from run to run and cannot be reproduced exactly. UCE-Modern samples with a seed
+(`--seed`, default 0), so its embeddings are reproducible. The benchmark below
+therefore asks a statistical question: is UCE-Modern as close to the original as
+two UCE-Modern runs with different seeds are to each other?
+
+We embedded the NeurIPS 2021 BMMC dataset (90,261 cells) with UCE-Modern-650m
+(TF32, batch size 25) using seeds 0 and 1, and compared both with the embeddings
+from the original UCE implementation:
+
+| Metric | Seed 0 vs original | Seed 1 vs original | Seed 1 vs seed 0 |
+| --- | --- | --- | --- |
+| Cosine similarity, same cell (mean) | 0.927 | 0.926 | 0.927 |
+| Mean absolute difference per value | 0.0081 | 0.0081 | 0.0081 |
+| Own cell is the nearest of all 90k (5,000 sampled cells) | 60.3% | 60.6% | 61.0% |
+| Shared 15 nearest neighbours | 12.4% | 12.4% | 12.3% |
+| Linear CKA | 0.978 | 0.978 | 0.978 |
+| Correlation of per-dimension means | 0.999998 | 0.999998 | 0.999998 |
+
+All three comparisons agree to three or four significant digits. UCE-Modern differs
+from the original exactly as much as it differs from itself under a different seed,
+so the remaining difference comes entirely from gene sampling, not from the port or
+from TF32. For reference, two unrelated cells have a mean cosine similarity of 0.40.
+
+> **Note:** this has so far been tested on one dataset (NeurIPS 2021 BMMC) and one
+> model (UCE-Modern-650m). Other tissues, species and UCE-Modern-100m have not been
+> benchmarked yet.
+
+The table also shows that a single UCE embedding carries noticeable sampling noise:
+only about 12% of a cell's 15 nearest neighbours stay the same after reseeding.
+Analyses that rely on fine-grained neighbourhoods may benefit from averaging the
+embeddings of several seeds.
+
+To reproduce, put the original UCE outputs in `benchmark/embedding_original/` as
+`<dataset>_uce_embs.npy`, then run:
+
+```bash
+bash scripts/preprocess.sh          # raw .h5ad -> UCE input format
+bash scripts/embed.sh               # seed 0; SEED=1 bash scripts/embed.sh for seed 1
+bash scripts/evaluate.sh            # JSON reports in benchmark/evaluation/
+```
 
 ## Citation
 
