@@ -1,6 +1,6 @@
 """Build (and optionally push) the Hugging Face repo for one released UCE model.
 
-    python scripts/build_hub_repo.py --model uce-100m --out converted/uce-100m \
+    python tools/build_hub_repo.py --model uce-100m --out converted/uce-100m \
         [--push <hf-user>/UCE-Modern-100m]
 
 uce-100m is the 4-layer model (Hub repo UCE-Modern-100m), uce-650m the 33-layer

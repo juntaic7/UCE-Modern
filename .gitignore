@@ -226,6 +226,7 @@ data/
 outputs/
 
 # Benchmarking
-benchmark/datasets/
-benchmark/preprocessed_datasets/
-embedding_original
+benchmark/raw_datasets/*
+benchmark/preprocessed_datasets/*
+benchmark/embedding_original/*
+benchmark/embedding/*

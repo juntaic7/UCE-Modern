@@ -33,7 +33,8 @@ with `AutoModel.from_pretrained(...)` and shared on the Hugging Face Hub.
 - [x] Script to convert original UCE checkpoints and build one self-contained
       Hugging Face repo per model
 - [x] AnnData preprocessing / cell-sentence processor (`UCEProcessor`)
-- [x] Dataset preprocessors for 10x Genomics and CELLxGENE data (`uce_modern/preprocessors/`)
+- [x] Dataset preprocessors for 10x Genomics, CELLxGENE and NeurIPS 2021 data, plus a
+      customizable template for other datasets (`uce_modern/preprocessors/`)
 - [x] End-to-end example on 10x PBMCs (`example.py`)
 - [ ] Numerical parity check against original UCE embeddings (`X_uce`)
 - [x] Pretrained weights published on the Hugging Face Hub:
@@ -110,7 +111,7 @@ genes), and adds the per-gene columns that the tokenizer (`processor(adata)` /
 | `var["uce_chrom"]` | int | Chromosome code |
 | `var["uce_start"]` | int | Genomic start position (orders genes within a chromosome) |
 
-### Prepare 10x Genomics or CELLxGENE data
+### Prepare 10x Genomics, CELLxGENE or other data
 
 The dataset preprocessors in [`uce_modern/preprocessors/`](uce_modern/preprocessors)
 convert common sources into the input format above, then check the result.
@@ -122,25 +123,38 @@ are still gene ids.
 | 10x Genomics Cell Ranger | `filtered_feature_bc_matrix.h5`, a matrix folder (`matrix.mtx.gz`, `features.tsv.gz`, `barcodes.tsv.gz`) or an `outs/` folder | Keeps Gene Expression features only; symbols as `var_names` and `var["gene_symbol"]`, Ensembl IDs in `var["gene_id"]`; several samples are concatenated on Ensembl IDs, with `obs["sample"]` |
 | CELLxGENE Discover | Downloaded `.h5ad` | Takes raw counts from `adata.raw.X` (its `X` is normalized); symbols from `var["feature_name"]` |
 | CELLxGENE Census | AnnData from `cellxgene_census.get_anndata(...)` | Symbols from `var["feature_name"]`, Ensembl IDs from `var["feature_id"]` |
+| NeurIPS 2021 (Open Problems BMMC CITE-seq) | `neurips_2021.h5ad` | Takes raw counts from `layers["counts"]` (its `X` is normalized); drops the ADT protein features; Ensembl IDs from `var["gene_id"]` |
+| Any other `.h5ad` | `.h5ad` or AnnData | `from_custom`: you name the symbol and id columns, the counts source and which features to keep. To reuse settings, copy [`custom.py`](uce_modern/preprocessors/custom.py) and edit its `EDIT:` lines |
 
 ```python
-from uce_modern.preprocessors import from_cellxgene, infer_species, read_10x, to_uce_format
+from uce_modern.preprocessors import (
+    from_cellxgene, from_custom, from_neurips_2021, infer_species, read_10x, to_uce_format,
+)
 
 adata = read_10x("sample/outs/filtered_feature_bc_matrix.h5")
 adata = read_10x(["a/outs", "b/outs"], sample_names=["a", "b"])  # sets obs["sample"]
 adata = from_cellxgene("cellxgene_download.h5ad")  # or a Census AnnData
 species = infer_species(adata)  # "human", "mouse", ... from CELLxGENE organism metadata
+adata = from_neurips_2021("benchmark/raw_datasets/neurips_2021.h5ad")
 
-# Any other AnnData: name the var column holding gene symbols and, optionally,
-# where the raw counts are ("X", "raw" for adata.raw.X, or a layer name).
+# Any other .h5ad: name the var column holding gene symbols, where the raw counts
+# are ("X", "raw" for adata.raw.X, or a layer name) and, optionally, which features to keep.
+adata = from_custom("other.h5ad", gene_symbol_key="gene_symbols", counts_layer="counts",
+                    feature_filter=("feature_types", ["Gene Expression"]))
+
+# Or the underlying conversion on an in-memory AnnData.
 adata = to_uce_format(other, gene_symbol_key="gene_symbols", counts_layer="counts")
 ```
 
 Or from the command line, writing a ready-to-use `.h5ad`:
 
 ```bash
-python scripts/preprocess_dataset.py 10x a/outs b/outs --sample-names a b --out data/my_10x.h5ad
-python scripts/preprocess_dataset.py cellxgene cellxgene_download.h5ad --out data/my_cxg.h5ad
+python tools/preprocess_dataset.py 10x a/outs b/outs --sample-names a b --out data/my_10x.h5ad
+python tools/preprocess_dataset.py cellxgene cellxgene_download.h5ad --out data/my_cxg.h5ad
+python tools/preprocess_dataset.py neurips_2021 benchmark/raw_datasets/neurips_2021.h5ad \
+    --out benchmark/preprocessed_datasets/neurips_2021.h5ad
+python tools/preprocess_dataset.py custom other.h5ad --gene-symbol-key gene_symbols \
+    --counts-layer counts --out data/other.h5ad
 ```
 
 Pass the result to `processor.prepare_adata` (see [Load the model](#load-the-model)), with the
@@ -154,8 +168,8 @@ separate Hub repos, each self-contained and loadable on its own. To rebuild them
 or to publish them under your own account:
 
 ```bash
-python scripts/build_hub_repo.py --model uce-100m --push <hf-user>/UCE-Modern-100m
-python scripts/build_hub_repo.py --model uce-650m --push <hf-user>/UCE-Modern-650m
+python tools/build_hub_repo.py --model uce-100m --push <hf-user>/UCE-Modern-100m
+python tools/build_hub_repo.py --model uce-650m --push <hf-user>/UCE-Modern-650m
 ```
 
 Each build downloads what it needs from the
@@ -173,7 +187,7 @@ and writes `converted/<model>/`:
 | `LICENSE` | — | MIT |
 
 Omit `--push` to build locally only. To convert an arbitrary checkpoint
-(weights and code only), use `scripts/convert_original_checkpoint.py`.
+(weights and code only), use `tools/convert_original_checkpoint.py`.
 
 ### Load the model
 

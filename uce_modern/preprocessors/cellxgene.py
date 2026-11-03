@@ -41,7 +41,9 @@ def infer_species(adata: ad.AnnData) -> Optional[str]:
         organisms |= set(adata.obs["organism"].astype(str).unique())
     if "organism" in adata.uns:
         organisms.add(str(adata.uns["organism"]))
-    species = {ORGANISM_TO_SPECIES.get(o) for o in organisms}
+    # Some datasets (e.g. NeurIPS 2021) already store the UCE species name ("human").
+    uce_species = set(ORGANISM_TO_SPECIES.values())
+    species = {ORGANISM_TO_SPECIES.get(o, o if o in uce_species else None) for o in organisms}
     return species.pop() if len(species) == 1 else None
 
 

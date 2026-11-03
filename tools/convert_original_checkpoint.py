@@ -1,6 +1,6 @@
 """Convert an original UCE checkpoint (4- or 33-layer) to transformers format.
 
-    python scripts/convert_original_checkpoint.py \
+    python tools/convert_original_checkpoint.py \
         --checkpoint model_files/4layer_model.torch --out converted/my-uce \
         [--push <hf-user>/my-uce]
 
