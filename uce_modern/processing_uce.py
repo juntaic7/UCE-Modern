@@ -41,6 +41,10 @@ CHECKPOINT_FILES = {"uce-100m": "4layer_model.torch", "uce-650m": "33l_8ep_1024t
 # embeddings: per species, gene symbol -> token id, chromosome code, genomic start.
 GENE_VOCAB_FILE = "gene_vocab.csv"
 
+# Gene symbols are read from this var column when present, else from var_names, so
+# genes sharing a symbol (var_names MATR3, MATR3-1) all keep it, as in the original.
+GENE_SYMBOL_KEY = "gene_symbol"
+
 # Processor settings read from the model's config.json in ``UCEProcessor.from_pretrained``.
 _CONFIG_KEYS = ("sample_size", "pad_length", "pad_token_idx", "chrom_token_right_idx",
                 "cls_token_idx", "chrom_token_offset")
@@ -109,6 +113,11 @@ def download_model_file(name: str, model_files_dir: str | Path = "model_files") 
         print(f"Downloading {name} -> {path} ...")
         _fetch(MODEL_FILE_URLS[name], path)
     return path
+
+
+def _upper_symbols(adata: sc.AnnData) -> pd.Index:
+    names = adata.var[GENE_SYMBOL_KEY] if GENE_SYMBOL_KEY in adata.var else adata.var_names
+    return pd.Index(names.astype(str)).str.upper()
 
 
 def _load_pt(path: Path):
@@ -241,13 +250,14 @@ class UCEProcessor:
     def prepare_adata(self, adata: sc.AnnData, filter: bool = True) -> sc.AnnData:
         """Filter cells/genes and attach per-gene token, chromosome, and start.
 
-        ``adata.X`` must hold raw counts and ``var_names`` must be gene symbols.
+        ``adata.X`` must hold raw counts and ``var_names`` must be gene symbols, or
+        ``var["gene_symbol"]`` must hold them (see ``GENE_SYMBOL_KEY``).
         """
         adata = adata.copy()
         if filter:
             sc.pp.filter_genes(adata, min_cells=10)
             sc.pp.filter_cells(adata, min_genes=25)
-        upper = adata.var_names.str.upper()
+        upper = _upper_symbols(adata)
         keep = upper.isin(list(self.gene_to_token)) & upper.isin(self.gene_to_chrom.index)
         n_drop = int((~keep).sum())
         if n_drop:
@@ -271,7 +281,7 @@ class UCEProcessor:
         if n_empty:
             print(f"UCE: dropping {n_empty}/{adata.n_obs} cells with no counts over UCE genes")
             adata = adata[usable].copy()
-        upper = adata.var_names.str.upper()
+        upper = _upper_symbols(adata)
         adata.var["uce_token_id"] = [self.gene_to_token[g] for g in upper]
         adata.var["uce_chrom"] = self.gene_to_chrom.loc[upper, "chrom_code"].to_numpy()
         adata.var["uce_start"] = self.gene_to_chrom.loc[upper, "start"].to_numpy()

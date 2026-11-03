@@ -13,16 +13,18 @@ PathLike = str | Path
 
 
 def _read_one(path: Path) -> ad.AnnData:
+    """Indexed by gene id, with symbols (not unique) in var["gene_symbol"]."""
     if path.is_dir():
         # A Cell Ranger outs/ folder: use its filtered matrix.
         for name in ("filtered_feature_bc_matrix.h5", "filtered_feature_bc_matrix"):
             if (path / name).exists():
                 return _read_one(path / name)
-        adata = sc.read_10x_mtx(path, var_names="gene_symbols", make_unique=False, gex_only=True)
+        adata = sc.read_10x_mtx(path, var_names="gene_ids", gex_only=True)
+        adata.var["gene_symbol"] = adata.var.pop("gene_symbols")
     else:
         adata = sc.read_10x_h5(path, gex_only=True)
-    # Same feature order in every sample, so the deduplicated names line up for concat.
-    adata.var_names_make_unique()
+        adata.var["gene_symbol"] = adata.var_names
+        adata.var_names = adata.var.pop("gene_ids")
     return adata
 
 
@@ -36,7 +38,7 @@ def read_10x(paths: PathLike | Sequence[PathLike], sample_names: Optional[Sequen
             ``barcodes.tsv.gz``); or a Cell Ranger ``outs/`` folder. Only Gene
             Expression features are kept.
         sample_names: one per path. Several samples (or any ``sample_names``) are
-            concatenated on their shared genes, with ``obs["sample"]`` set and
+            concatenated on their shared gene ids, with ``obs["sample"]`` set and
             ``_<sample>`` appended to barcodes to keep them unique.
             Default: ``"0"``, ``"1"``, ...
     """
@@ -49,7 +51,7 @@ def read_10x(paths: PathLike | Sequence[PathLike], sample_names: Optional[Sequen
         names = list(sample_names) if sample_names is not None else [str(i) for i in range(len(adatas))]
         if len(names) != len(adatas):
             raise ValueError(f"Got {len(names)} sample names for {len(adatas)} paths")
+        # merge="first": symbols from the first sample, if references renamed a gene.
         adata = ad.concat(dict(zip(names, adatas)), label="sample", index_unique="_",
-                          join="inner", merge="same")
-    # gene_ids is dropped by concat if samples used different references.
-    return to_uce_format(adata, gene_id_key="gene_ids" if "gene_ids" in adata.var else None, counts_layer="X")
+                          join="inner", merge="first")
+    return to_uce_format(adata, gene_symbol_key="gene_symbol", counts_layer="X")

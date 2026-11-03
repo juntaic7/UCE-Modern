@@ -94,6 +94,7 @@ processor (`processor.prepare_adata`), it **must** have:
 | --- | --- | --- |
 | `adata.X` | **Yes** | **Raw integer counts** (e.g. UMI counts), cells × genes, sparse or dense. Not normalized, log-transformed or scaled. |
 | `adata.var_names` | **Yes** | **Gene symbols** of the processor's species (e.g. `CD3E`; matched case-insensitively), unique. Not Ensembl IDs. |
+| `adata.var["gene_symbol"]` | No | Each gene's symbol, matched instead of `var_names` when present. The dataset preprocessors set it, so genes that share a symbol (unique `var_names` `MATR3`, `MATR3-1`) are all kept, as separate columns, as in the original UCE. |
 | `adata.obs` | No | Any cell metadata. Passed through unchanged. |
 
 Keep all genes; don't subset to highly variable genes. `prepare_adata` drops
@@ -118,7 +119,7 @@ are still gene ids.
 
 | Source | Input | What the preprocessor does |
 | --- | --- | --- |
-| 10x Genomics Cell Ranger | `filtered_feature_bc_matrix.h5`, a matrix folder (`matrix.mtx.gz`, `features.tsv.gz`, `barcodes.tsv.gz`) or an `outs/` folder | Keeps Gene Expression features only; symbols as `var_names`, Ensembl IDs in `var["gene_id"]`; several samples are concatenated, with `obs["sample"]` |
+| 10x Genomics Cell Ranger | `filtered_feature_bc_matrix.h5`, a matrix folder (`matrix.mtx.gz`, `features.tsv.gz`, `barcodes.tsv.gz`) or an `outs/` folder | Keeps Gene Expression features only; symbols as `var_names` and `var["gene_symbol"]`, Ensembl IDs in `var["gene_id"]`; several samples are concatenated on Ensembl IDs, with `obs["sample"]` |
 | CELLxGENE Discover | Downloaded `.h5ad` | Takes raw counts from `adata.raw.X` (its `X` is normalized); symbols from `var["feature_name"]` |
 | CELLxGENE Census | AnnData from `cellxgene_census.get_anndata(...)` | Symbols from `var["feature_name"]`, Ensembl IDs from `var["feature_id"]` |
 

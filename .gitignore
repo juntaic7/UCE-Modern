@@ -224,3 +224,8 @@ model_files/
 converted/
 data/
 outputs/
+
+# Benchmarking
+benchmark/datasets/
+benchmark/preprocessed_datasets/
+embedding_original

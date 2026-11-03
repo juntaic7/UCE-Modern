@@ -4,8 +4,11 @@ UCE-ready AnnData:
 
 - ``X``: raw integer counts (cells x genes) as a float32 CSR matrix. Not
   normalized, log-transformed or scaled.
-- ``var_names``: unique gene symbols (e.g. ``CD3E``), matched case-insensitively
-  against the processor's gene vocabulary. Not Ensembl ids.
+- ``var_names``: unique gene symbols (e.g. ``CD3E``). Not Ensembl ids. Genes
+  sharing a symbol get ``-1``, ``-2``, ... appended (``MATR3``, ``MATR3-1``).
+- ``var["gene_symbol"]``: each gene's symbol, without the suffix. The processor
+  matches it case-insensitively against its gene vocabulary, so genes sharing a
+  symbol are all kept, as separate columns, as in the original UCE.
 - ``var["gene_id"]``: the source gene id (e.g. Ensembl), when known. Informational only.
 - ``obs``, ``obsm``, ``uns``: passed through unchanged.
 """
@@ -81,14 +84,11 @@ def _find_counts(adata: ad.AnnData, counts_layer: Optional[str]) -> Tuple[object
 def validate_uce_input(adata: ad.AnnData) -> None:
     """Raise ``ValueError`` if ``adata`` is not in the UCE input format (see module docstring).
 
-    Non-integer counts only print a warning, as in ``UCEProcessor.prepare_adata``:
+    Non-integer counts are allowed (``UCEProcessor.prepare_adata`` warns about them):
     some assays (e.g. Smart-seq) report fractional estimated counts.
     """
     if (_values(adata.X) < 0).any():
         raise ValueError("adata.X has negative values; UCE needs raw counts, not scaled data.")
-    if not is_raw_counts(adata.X):
-        print("UCE: warning: adata.X has non-integer values; UCE expects raw counts. "
-              "Normalized or log-transformed data gives wrong embeddings.")
     if not adata.var_names.is_unique:
         raise ValueError("var_names are not unique; call adata.var_names_make_unique().")
     if _looks_like_gene_ids(adata.var_names):
@@ -129,7 +129,8 @@ def to_uce_format(
         symbols = var.index
         if gene_id_key:
             var["gene_id"] = var[gene_id_key].astype(str)
-    var.index = ad.utils.make_index_unique(pd.Index(symbols.astype(str).to_numpy()))
+    var["gene_symbol"] = symbols.astype(str).to_numpy()
+    var.index = ad.utils.make_index_unique(pd.Index(var["gene_symbol"].to_numpy()))
 
     out = ad.AnnData(
         X=sparse.csr_matrix(X, dtype=np.float32),

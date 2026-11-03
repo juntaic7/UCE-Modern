@@ -36,6 +36,7 @@ def main():
             ap.error("cellxgene takes one .h5ad and no --sample-names")
         adata = from_cellxgene(args.inputs[0], counts_layer=args.counts_layer)
 
+    adata.obs.columns = adata.obs.columns.str.replace("/", "_")  # h5ad keys cannot contain '/'
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     adata.write_h5ad(out)
