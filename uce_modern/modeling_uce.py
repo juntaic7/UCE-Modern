@@ -8,6 +8,7 @@ import torch
 import torch.nn.functional as F
 from einops import rearrange
 from torch import nn
+from torch.nn.modules.linear import NonDynamicallyQuantizableLinear
 from transformers import PreTrainedModel
 from transformers.utils import ModelOutput
 
@@ -57,13 +58,16 @@ class UCEPreTrainedModel(PreTrainedModel):
     _no_split_modules = ["TransformerEncoderLayer"]
 
     def _init_weights(self, module):
-        if isinstance(module, nn.Linear):
-            nn.init.normal_(module.weight, std=0.02)
-            if module.bias is not None:
+        """PyTorch's own defaults: the original UCE has no initialization of its own, so its weights start as
+        ``nn.Linear``, ``nn.LayerNorm`` and ``nn.MultiheadAttention`` construct them."""
+        if isinstance(module, nn.MultiheadAttention):
+            module._reset_parameters()
+        elif isinstance(module, (nn.Linear, nn.LayerNorm)):
+            module.reset_parameters()
+            if isinstance(module, NonDynamicallyQuantizableLinear):
+                # nn.MultiheadAttention's output projection, whose bias it zeroes; done here too, so the result
+                # does not depend on which of the two modules is visited first.
                 nn.init.zeros_(module.bias)
-        elif isinstance(module, nn.LayerNorm):
-            nn.init.ones_(module.weight)
-            nn.init.zeros_(module.bias)
 
 
 class UCEModel(UCEPreTrainedModel):
@@ -75,7 +79,8 @@ class UCEModel(UCEPreTrainedModel):
         d, out, p = config.d_model, config.output_dim, config.dropout
         self.d_model = d
 
-        # Frozen token table: normalised ESM2 protein embeddings + chromosome tokens.
+        # Frozen token table: normalised ESM2 protein embeddings + chromosome tokens. It is never trained, so a model
+        # built from a config holds a random placeholder here until the table is loaded from a checkpoint.
         self.pe_embedding = nn.Embedding(config.vocab_size, config.token_dim)
         self.pe_embedding.weight.requires_grad_(False)
 
@@ -99,6 +104,12 @@ class UCEModel(UCEPreTrainedModel):
         self.gene_embedding_layer = nn.Sequential(nn.Linear(config.token_dim, d), nn.GELU(), nn.LayerNorm(d))
 
         self.post_init()
+        # nn.TransformerEncoder deep-copies one layer, so the original's layers all start from the same weights;
+        # post_init draws each layer's afresh, so the first layer's are copied back to the others. This only matters
+        # for a model built from a config: from_pretrained then replaces every weight with the checkpoint's.
+        first = self.transformer_encoder.layers[0].state_dict()
+        for layer in self.transformer_encoder.layers[1:]:
+            layer.load_state_dict(first)
 
     def get_input_embeddings(self) -> nn.Embedding:
         return self.pe_embedding
